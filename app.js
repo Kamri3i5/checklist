@@ -45,6 +45,7 @@
       passRate: 'Соответствие',
       noResults: 'Ничего не найдено',
       items: 'пунктов',
+      section: 'Раздел',
       printTitle: 'Акт проверки безопасности лифта',
       printSummary: 'Сводка результатов',
       totalItems: 'Всего пунктов',
@@ -94,6 +95,7 @@
       passRate: 'Muvofiqlik',
       noResults: 'Hech narsa topilmadi',
       items: 'bandlar',
+      section: 'Boʻlim',
       printTitle: "Lift xavfsizligi tekshiruv dalolatnomasi",
       printSummary: 'Natijalar xulosasi',
       totalItems: 'Jami bandlar',
@@ -143,6 +145,7 @@
       passRate: 'Compliance',
       noResults: 'No results found',
       items: 'items',
+      section: 'Section',
       printTitle: 'Elevator Safety Inspection Report',
       printSummary: 'Results Summary',
       totalItems: 'Total items',
@@ -158,6 +161,7 @@
   // ===================== STATE =====================
   let state = {
     lang: 'ru',
+    activeChecklist: 'drive',
     filter: 'all',
     searchQuery: '',
     scrollPosition: 0,
@@ -179,6 +183,27 @@
   let confirmCallback = null;
   const STORAGE_KEY = 'elevator_checklist_state';
   const HISTORY_KEY = 'elevator_checklist_history';
+
+  // ===================== ACTIVE CHECKLIST =====================
+  // data.js exposes global CHECKLISTS = [{id,name,short,sectionTitles,data}, ...]
+  let CHECKLIST_DATA = [];
+  let SECTION_TITLES = {};
+
+  function setActiveChecklist(id) {
+    var cl = null;
+    for (var i = 0; i < CHECKLISTS.length; i++) { if (CHECKLISTS[i].id === id) { cl = CHECKLISTS[i]; break; } }
+    if (!cl) cl = CHECKLISTS[0];
+    state.activeChecklist = cl.id;
+    CHECKLIST_DATA = cl.data;
+    SECTION_TITLES = cl.sectionTitles;
+    // Namespace item keys per checklist so progress/comments never collide between checklists
+    CHECKLIST_DATA.forEach(function (sec) {
+      sec.subsections.forEach(function (ss) {
+        ss.items.forEach(function (it) { it.key = cl.id + ':' + it.num; });
+      });
+    });
+    _allItems = null;
+  }
 
   // ===================== HELPERS =====================
   function t(key) {
@@ -238,7 +263,7 @@
   function getStats(items) {
     let c = 0, nc = 0;
     for (let i = 0; i < items.length; i++) {
-      const s = state.itemStatuses[items[i].num];
+      const s = state.itemStatuses[items[i].key];
       if (s === 'compliant') c++;
       else if (s === 'noncompliant') nc++;
     }
@@ -263,7 +288,7 @@
 
   // ===================== FILTERING =====================
   function itemVisible(item) {
-    var s = state.itemStatuses[item.num];
+    var s = state.itemStatuses[item.key];
     if (state.filter === 'unchecked' && s) return false;
     if (state.filter === 'noncompliant' && s !== 'noncompliant') return false;
     if (state.searchQuery) {
@@ -302,6 +327,15 @@
         '<span class="tab-progress">' + ss.compliant + '/' + ss.total + '</span></button>';
     });
 
+    var clSwitchHtml = '';
+    if (typeof CHECKLISTS !== 'undefined' && CHECKLISTS.length > 1) {
+      CHECKLISTS.forEach(function (cl) {
+        clSwitchHtml += '<button class="cl-switch-btn' + (cl.id === state.activeChecklist ? ' active' : '') +
+          '" data-checklist="' + cl.id + '" title="' + escapeHtml(cl.name) + '">' + escapeHtml(cl.name) + '</button>';
+      });
+      clSwitchHtml = '<div class="checklist-switcher">' + clSwitchHtml + '</div>';
+    }
+
     return '<header id="app-header">' +
       '<div class="header-top">' +
         '<div class="app-title">' + t('appTitle') + '</div>' +
@@ -315,6 +349,7 @@
           '<button id="btn-print">' + t('print') + '</button>' +
         '</div>' +
       '</div>' +
+      clSwitchHtml +
       '<div class="progress-bar-container">' +
         '<div class="progress-bar-track"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>' +
         '<div class="progress-stats">' +
@@ -336,16 +371,17 @@
   }
 
   function buildItemHtml(item) {
-    var status = state.itemStatuses[item.num] || '';
-    var comment = state.itemComments[item.num] || '';
-    var commentVis = state.commentVisible[item.num];
+    var key = item.key;
+    var status = state.itemStatuses[key] || '';
+    var comment = state.itemComments[key] || '';
+    var commentVis = state.commentVisible[key];
     var sc = status === 'compliant' ? ' status-compliant' : status === 'noncompliant' ? ' status-noncompliant' : '';
     var printLabel = status === 'compliant' ? t('compliant') : status === 'noncompliant' ? t('noncompliantShort') : '';
     var printClass = status === 'compliant' ? ' compliant' : status === 'noncompliant' ? ' noncompliant' : '';
     var textHtml = state.searchQuery ? highlightText(item.text, state.searchQuery) : escapeHtml(item.text);
     var ro = state.readonlyMode;
 
-    var html = '<div class="check-item' + sc + '" data-item="' + item.num + '">' +
+    var html = '<div class="check-item' + sc + '" data-item="' + key + '">' +
       '<span class="item-num">' + item.num + '</span>' +
       '<span class="item-text">' + textHtml +
         (item.enRef ? '<span class="en-ref">' + escapeHtml(item.enRef) + '</span>' : '') +
@@ -353,14 +389,14 @@
       '</span>' +
       '<div class="item-actions">';
     if (!ro) {
-      html += '<button class="status-btn btn-compliant' + (status === 'compliant' ? ' active' : '') + '" data-status-btn="' + item.num + '" data-val="compliant" title="' + t('compliant') + '">&#10003;</button>' +
-        '<button class="status-btn btn-noncompliant' + (status === 'noncompliant' ? ' active' : '') + '" data-status-btn="' + item.num + '" data-val="noncompliant" title="' + t('noncompliantShort') + '">&#10007;</button>' +
-        '<button class="btn-comment' + (comment ? ' has-comment' : '') + '" data-comment-toggle="' + item.num + '" title="' + t('comment') + '">&#9998;</button>';
+      html += '<button class="status-btn btn-compliant' + (status === 'compliant' ? ' active' : '') + '" data-status-btn="' + key + '" data-val="compliant" title="' + t('compliant') + '">&#10003;</button>' +
+        '<button class="status-btn btn-noncompliant' + (status === 'noncompliant' ? ' active' : '') + '" data-status-btn="' + key + '" data-val="noncompliant" title="' + t('noncompliantShort') + '">&#10007;</button>' +
+        '<button class="btn-comment' + (comment ? ' has-comment' : '') + '" data-comment-toggle="' + key + '" title="' + t('comment') + '">&#9998;</button>';
     }
     html += '</div></div>';
 
-    html += '<div class="item-comment' + ((commentVis || comment) ? ' visible' : '') + '" data-comment-area="' + item.num + '">' +
-      '<textarea placeholder="' + t('comment') + '" data-comment-input="' + item.num + '"' + (ro ? ' readonly' : '') + '>' + escapeHtml(comment) + '</textarea>' +
+    html += '<div class="item-comment' + ((commentVis || comment) ? ' visible' : '') + '" data-comment-area="' + key + '">' +
+      '<textarea placeholder="' + t('comment') + '" data-comment-input="' + key + '"' + (ro ? ' readonly' : '') + '>' + escapeHtml(comment) + '</textarea>' +
       '<span class="print-comment">' + escapeHtml(comment) + '</span></div>';
 
     return html;
@@ -378,7 +414,7 @@
     }
     if (visItems.length === 0 && isFiltering) return '';
 
-    var allCompl = sub.items.length > 0 && sub.items.every(function (it) { return state.itemStatuses[it.num] === 'compliant'; });
+    var allCompl = sub.items.length > 0 && sub.items.every(function (it) { return state.itemStatuses[it.key] === 'compliant'; });
     var btnLbl = allCompl ? t('deselectAll') : t('selectAllCompliant');
 
     var html = '<div class="subsection-block' + (isCollapsed ? ' collapsed' : '') + '" id="subsection-' + sub.num + '">' +
@@ -415,12 +451,15 @@
     if (!hasVisible && isFiltering) return '';
 
     var pct = stats.total > 0 ? Math.round((stats.compliant / stats.total) * 100) : 0;
+    var allComplSec = items.length > 0 && items.every(function (it) { return state.itemStatuses[it.key] === 'compliant'; });
+    var secBtnLbl = allComplSec ? t('deselectAll') : t('selectAllCompliant');
 
     var html = '<div class="section-block' + (isCollapsed ? ' collapsed' : '') + '" id="section-' + section.num + '">' +
       '<div class="section-header" data-section-toggle="' + section.num + '">' +
         '<h2><span class="section-num">' + section.num + '</span>' + escapeHtml(SECTION_TITLES[section.num]) + '</h2>' +
         '<div class="section-header-right">' +
           '<span class="section-progress">' + stats.compliant + '/' + stats.total + ' (' + pct + '%) | ' + stats.noncompliant + ' ' + t('noncompliantShort') + '</span>' +
+          (!state.readonlyMode ? '<button class="btn-select-all btn-select-all-section" data-select-all-section="' + section.num + '">' + secBtnLbl + '</button>' : '') +
           '<span class="section-chevron">&#9660;</span>' +
         '</div>' +
       '</div>' +
@@ -458,23 +497,53 @@
   }
 
   function buildPrintAndBannerHtml() {
+    var activeName = '';
+    if (typeof CHECKLISTS !== 'undefined') {
+      for (var k = 0; k < CHECKLISTS.length; k++) { if (CHECKLISTS[k].id === state.activeChecklist) { activeName = CHECKLISTS[k].name; break; } }
+    }
+    // Per-section statistics rows
+    var rows = '';
+    for (var i = 0; i < CHECKLIST_DATA.length; i++) {
+      var sec = CHECKLIST_DATA[i];
+      var its = [];
+      sec.subsections.forEach(function (ss) { its = its.concat(ss.items); });
+      var st = getStats(its);
+      var p = st.total > 0 ? Math.round((st.compliant / st.total) * 100) : 0;
+      rows += '<tr><td class="ps-name">' + sec.num + '. ' + escapeHtml(SECTION_TITLES[sec.num]) + '</td>' +
+        '<td>' + st.total + '</td>' +
+        '<td class="ps-c">' + st.compliant + '</td>' +
+        '<td class="ps-nc">' + st.noncompliant + '</td>' +
+        '<td>' + st.unchecked + '</td>' +
+        '<td>' + p + '%</td></tr>';
+    }
+    var overall = getOverallStats();
+    var opct = overall.total > 0 ? Math.round((overall.compliant / overall.total) * 100) : 0;
+
     return '<div class="readonly-banner' + (state.readonlyMode ? ' visible' : '') + '" id="readonly-banner">' +
         '<span>' + t('readonlyMode') + '</span>' +
         '<button id="btn-exit-readonly">' + t('exitReadonly') + '</button></div>' +
-      '<div class="print-header"><h1>' + t('printTitle') + '</h1><div class="print-info">' +
+      '<div class="print-header"><h1>' + t('printTitle') + '</h1>' +
+        (activeName ? '<div class="print-checklist-name">' + escapeHtml(activeName) + '</div>' : '') +
+        '<div class="print-info">' +
         '<strong>' + t('address') + ':</strong> ' + escapeHtml(state.elevatorInfo.address || '---') + '<br>' +
         '<strong>' + t('serialNumber') + ':</strong> ' + escapeHtml(state.elevatorInfo.serialNumber || '---') + '<br>' +
         '<strong>' + t('inspectionDate') + ':</strong> ' + escapeHtml(state.elevatorInfo.inspectionDate || '---') + '<br>' +
         '<strong>' + t('inspectorName') + ':</strong> ' + escapeHtml(state.elevatorInfo.inspectorName || '---') +
       '</div></div>' +
-      (function () {
-        var stats = getOverallStats();
-        var pct = stats.total > 0 ? Math.round((stats.compliant / stats.total) * 100) : 0;
-        return '<div class="print-summary"><h3>' + t('printSummary') + '</h3><p>' +
-          t('totalItems') + ': ' + stats.total + ' | ' + t('compliantItems') + ': ' + stats.compliant +
-          ' | ' + t('noncompliantItems') + ': ' + stats.noncompliant + ' | ' + t('uncheckedItems') + ': ' + stats.unchecked +
-          ' | ' + t('passRate') + ': ' + pct + '%</p></div>';
-      })();
+      '<div class="print-summary"><h3>' + t('printSummary') + '</h3>' +
+        '<p class="print-summary-line">' +
+          t('totalItems') + ': ' + overall.total + ' | ' + t('compliantItems') + ': ' + overall.compliant +
+          ' | ' + t('noncompliantItems') + ': ' + overall.noncompliant + ' | ' + t('uncheckedItems') + ': ' + overall.unchecked +
+          ' | ' + t('passRate') + ': ' + opct + '%</p>' +
+        '<table class="print-section-stats"><thead><tr>' +
+          '<th>' + t('section') + '</th>' +
+          '<th>' + t('totalItems') + '</th>' +
+          '<th>' + t('compliant') + '</th>' +
+          '<th>' + t('noncompliantShort') + '</th>' +
+          '<th>' + t('uncheckedShort') + '</th>' +
+          '<th>%</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '</div>';
   }
 
   function renderModals() {
@@ -522,6 +591,26 @@
     app.addEventListener('click', function (e) {
       var target = e.target;
 
+      // Checklist switch
+      var clBtn = target.closest('[data-checklist]');
+      if (clBtn) {
+        var clId = clBtn.getAttribute('data-checklist');
+        if (clId !== state.activeChecklist) {
+          setActiveChecklist(clId);
+          CHECKLIST_DATA.forEach(function (section) {
+            section.subsections.forEach(function (sub) {
+              if (state.collapsedSubsections[sub.num] === undefined) state.collapsedSubsections[sub.num] = true;
+            });
+          });
+          state.searchQuery = '';
+          state.filter = 'all';
+          scheduleSave();
+          render();
+          window.scrollTo(0, 0);
+        }
+        return;
+      }
+
       // Status button
       var statusBtn = target.closest('[data-status-btn]');
       if (statusBtn && !state.readonlyMode) {
@@ -532,7 +621,7 @@
         } else {
           state.itemStatuses[num] = val;
         }
-        scheduleSave();
+        saveState();
         render();
         return;
       }
@@ -544,12 +633,35 @@
         var subNum = selAll.getAttribute('data-select-all');
         var sub = findSubsection(subNum);
         if (sub) {
-          var allC = sub.items.every(function (it) { return state.itemStatuses[it.num] === 'compliant'; });
+          var allC = sub.items.every(function (it) { return state.itemStatuses[it.key] === 'compliant'; });
           sub.items.forEach(function (it) {
-            if (allC) delete state.itemStatuses[it.num];
-            else state.itemStatuses[it.num] = 'compliant';
+            if (allC) delete state.itemStatuses[it.key];
+            else state.itemStatuses[it.key] = 'compliant';
           });
-          scheduleSave();
+          saveState();
+          render();
+        }
+        return;
+      }
+
+      // Select all compliant for an entire section
+      var selAllSec = target.closest('[data-select-all-section]');
+      if (selAllSec && !state.readonlyMode) {
+        e.stopPropagation();
+        var secNum2 = selAllSec.getAttribute('data-select-all-section');
+        var sec2 = null;
+        for (var si = 0; si < CHECKLIST_DATA.length; si++) {
+          if (CHECKLIST_DATA[si].num === secNum2) { sec2 = CHECKLIST_DATA[si]; break; }
+        }
+        if (sec2) {
+          var secItems2 = [];
+          sec2.subsections.forEach(function (ss) { secItems2 = secItems2.concat(ss.items); });
+          var allC2 = secItems2.length > 0 && secItems2.every(function (it) { return state.itemStatuses[it.key] === 'compliant'; });
+          secItems2.forEach(function (it) {
+            if (allC2) delete state.itemStatuses[it.key];
+            else state.itemStatuses[it.key] = 'compliant';
+          });
+          saveState();
           render();
         }
         return;
@@ -830,7 +942,7 @@
 
   function autoSaveToHistory() {
     var allItems = getAllItems();
-    if (!allItems.some(function (i) { return state.itemStatuses[i.num]; })) return;
+    if (!allItems.some(function (i) { return state.itemStatuses[i.key]; })) return;
     var addr = state.elevatorInfo.address || '';
     var serial = state.elevatorInfo.serialNumber || '';
     var date = state.elevatorInfo.inspectionDate || new Date().toISOString().split('T')[0];
@@ -874,7 +986,7 @@
       var allItems = getAllItems();
       var c = 0, nc = 0;
       allItems.forEach(function (it) {
-        var s = entry.itemStatuses[it.num];
+        var s = entry.itemStatuses[it.key];
         if (s === 'compliant') c++;
         else if (s === 'noncompliant') nc++;
       });
@@ -909,6 +1021,7 @@
   // ===================== INIT =====================
   function init() {
     loadState();
+    setActiveChecklist(state.activeChecklist || 'drive');
     if (!state.elevatorInfo.inspectionDate) {
       state.elevatorInfo.inspectionDate = new Date().toISOString().split('T')[0];
     }
@@ -928,6 +1041,7 @@
       if (document.visibilityState === 'hidden') saveState();
     });
     window.addEventListener('beforeunload', function () { saveState(); });
+    window.addEventListener('pagehide', function () { saveState(); });
   }
 
   if (document.readyState === 'loading') {
