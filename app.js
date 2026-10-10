@@ -340,9 +340,6 @@
       '<div class="header-top">' +
         '<div class="app-title">' + t('appTitle') + '</div>' +
         '<div class="header-actions">' +
-          '<select id="lang-select"><option value="ru"' + (state.lang === 'ru' ? ' selected' : '') + '>RU</option>' +
-          '<option value="uz"' + (state.lang === 'uz' ? ' selected' : '') + '>UZ</option>' +
-          '<option value="en"' + (state.lang === 'en' ? ' selected' : '') + '>EN</option></select>' +
           '<button id="btn-save" class="btn-success">' + t('save') + '</button>' +
           '<button id="btn-history">' + t('history') + '</button>' +
           '<button id="btn-new">' + t('newInspection') + '</button>' +
@@ -1132,6 +1129,7 @@
   // ===================== INIT =====================
   function init() {
     loadState();
+    state.lang = 'ru'; // language switching removed: always Russian
     setActiveChecklist(state.activeChecklist || 'drive');
     if (!state.elevatorInfo.inspectionDate) {
       state.elevatorInfo.inspectionDate = new Date().toISOString().split('T')[0];
