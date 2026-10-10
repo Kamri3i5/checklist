@@ -571,6 +571,7 @@
       buildMainContentHtml();
 
     document.getElementById('app').innerHTML = html;
+    updateStickyTop();
 
     // Only re-render modals if none is currently active
     var modalsEl = document.getElementById('modals');
@@ -1018,6 +1019,116 @@
     saveState();
   }
 
+
+  // ===================== UI SIZE / TABLET CONTROLS =====================
+  var UI_KEY = 'elevator_checklist_ui';
+  var uiPrefs = { scale: 1, stickyHeader: true };
+  var UI_TXT = {
+    ru: { title: 'Размер интерфейса', reset: 'Сброс', pinOff: 'Шапка не закреплена', pinOn: 'Шапка закреплена' },
+    uz: { title: 'Interfeys o\u2018lchami', reset: 'Qayta', pinOff: 'Sarlavha mahkamlanmagan', pinOn: 'Sarlavha mahkamlangan' },
+    en: { title: 'Interface size', reset: 'Reset', pinOff: 'Header not pinned', pinOn: 'Header pinned' }
+  };
+  function uiT(k) { return (UI_TXT[state.lang] || UI_TXT.ru)[k]; }
+
+  function loadUiPrefs() {
+    try {
+      var p = JSON.parse(localStorage.getItem(UI_KEY));
+      if (p && typeof p.scale === 'number') uiPrefs.scale = Math.min(1.8, Math.max(0.6, p.scale));
+      if (p && typeof p.stickyHeader === 'boolean') uiPrefs.stickyHeader = p.stickyHeader;
+    } catch (e) { /* */ }
+  }
+  function saveUiPrefs() {
+    try { localStorage.setItem(UI_KEY, JSON.stringify(uiPrefs)); } catch (e) { /* */ }
+  }
+  function updateStickyTop() {
+    var h = document.getElementById('app-header');
+    var top = (uiPrefs.stickyHeader && h) ? h.offsetHeight : 0;
+    document.documentElement.style.setProperty('--sticky-top', top + 'px');
+  }
+  function applyUiPrefs() {
+    var root = document.documentElement;
+    root.style.setProperty('--ui-scale', uiPrefs.scale);
+    root.classList.toggle('header-free', !uiPrefs.stickyHeader);
+    updateStickyTop();
+  }
+  function setUiScale(v) {
+    v = Math.round(Math.min(1.8, Math.max(0.6, v)) * 100) / 100;
+    uiPrefs.scale = v;
+    saveUiPrefs();
+    applyUiPrefs();
+    setTimeout(updateStickyTop, 50);
+    refreshUiPanel();
+  }
+
+  function refreshUiPanel() {
+    var p = document.getElementById('ui-panel');
+    if (!p) return;
+    p.querySelector('.ui-title-text').textContent = uiT('title');
+    p.querySelector('.ui-val').textContent = Math.round(uiPrefs.scale * 100) + '%';
+    p.querySelector('input[type=range]').value = Math.round(uiPrefs.scale * 100);
+    p.querySelector('[data-ui-reset]').textContent = uiT('reset');
+    var tg = p.querySelector('[data-ui-pin]');
+    tg.textContent = uiPrefs.stickyHeader ? uiT('pinOn') : uiT('pinOff');
+    tg.classList.toggle('on', uiPrefs.stickyHeader);
+    [].forEach.call(p.querySelectorAll('[data-ui-preset]'), function (b) {
+      b.classList.toggle('on', Math.abs(parseFloat(b.getAttribute('data-ui-preset')) - uiPrefs.scale) < 0.001);
+    });
+  }
+
+  function setupUiControl() {
+    var fab = document.createElement('button');
+    fab.id = 'ui-fab';
+    fab.type = 'button';
+    fab.setAttribute('aria-label', 'UI size');
+    fab.innerHTML = 'A<span style="font-size:14px">A</span>';
+    var panel = document.createElement('div');
+    panel.id = 'ui-panel';
+    panel.innerHTML =
+      '<div class="ui-title"><span class="ui-title-text"></span><span class="ui-val"></span></div>' +
+      '<div class="ui-row"><button type="button" data-ui-step="-0.05">&minus;</button>' +
+      '<input type="range" min="60" max="180" step="5">' +
+      '<button type="button" data-ui-step="0.05">+</button></div>' +
+      '<div class="ui-row ui-presets">' +
+      '<button type="button" data-ui-preset="0.85">S</button>' +
+      '<button type="button" data-ui-preset="1">M</button>' +
+      '<button type="button" data-ui-preset="1.25">L</button>' +
+      '<button type="button" data-ui-preset="1.5">XL</button>' +
+      '<button type="button" data-ui-reset="1"></button></div>' +
+      '<div class="ui-row"><button type="button" class="ui-toggle" data-ui-pin="1"></button></div>';
+    document.body.appendChild(panel);
+    document.body.appendChild(fab);
+
+    fab.addEventListener('click', function (e) {
+      e.stopPropagation();
+      panel.classList.toggle('open');
+      refreshUiPanel();
+    });
+    panel.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.hasAttribute('data-ui-step')) setUiScale(uiPrefs.scale + parseFloat(b.getAttribute('data-ui-step')));
+      else if (b.hasAttribute('data-ui-preset')) setUiScale(parseFloat(b.getAttribute('data-ui-preset')));
+      else if (b.hasAttribute('data-ui-reset')) setUiScale(1);
+      else if (b.hasAttribute('data-ui-pin')) {
+        uiPrefs.stickyHeader = !uiPrefs.stickyHeader;
+        saveUiPrefs(); applyUiPrefs(); refreshUiPanel();
+      }
+    });
+    panel.querySelector('input[type=range]').addEventListener('input', function (e) {
+      setUiScale(parseInt(e.target.value, 10) / 100);
+    });
+    document.addEventListener('click', function (e) {
+      if (panel.classList.contains('open') && !panel.contains(e.target)) panel.classList.remove('open');
+    });
+    window.addEventListener('resize', updateStickyTop);
+    window.addEventListener('orientationchange', function () { setTimeout(updateStickyTop, 200); });
+    refreshUiPanel();
+  }
+
+  loadUiPrefs();
+  applyUiPrefs();
+
   // ===================== INIT =====================
   function init() {
     loadState();
@@ -1036,6 +1147,7 @@
     });
     render();
     setupEventDelegation();
+    setupUiControl();
 
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') saveState();
