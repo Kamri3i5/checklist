@@ -479,19 +479,108 @@
     return '<div class="main-content" id="main-content">' + html + '</div>';
   }
 
+  // ===================== REPORT HEADER FORM =====================
+  var INFO_GROUPS = [
+    { title: 'ОТЧЁТ О ТЕХНИЧЕСКОМ ОСМОТРЕ ЛИФТА', fields: [
+      { k: 'responsibleBody', label: 'Наименование ответственного органа', hint: 'Орган, ответственный за лифт. Пишите так, как указано в регистрационных документах.' },
+      { k: 'liftId', label: 'Идентификационный номер лифта', hint: 'Идентификационный номер лифта из его документов или с таблички.' },
+      { k: 'reportNo', label: '№ отчёта / № повторного отчёта', hint: 'Номер этого отчёта. Если осмотр повторный, укажите номер повторного отчёта.' },
+      { k: 'inspectionDate', label: 'Дата технического осмотра', type: 'date', hint: 'Дата, когда проводится осмотр. По умолчанию подставляется сегодняшняя.' },
+      { k: 'inspectorName', label: 'Инспектор', hint: 'ФИО того, кто проводит осмотр.' }
+    ]},
+    { title: 'ИНФОРМАЦИЯ О ЛИФТЕ', fields: [
+      { k: 'regNumber', label: 'Регистрационный номер', hint: 'Регистрационный номер лифта из регистрационных документов.' },
+      { k: 'regDate', label: 'Дата регистрации', type: 'date', hint: 'Дата, когда лифт был зарегистрирован.' },
+      { k: 'conformityMark', label: 'Национальный знак соответствия', hint: 'Знак соответствия лифта, как он указан в документах.' },
+      { k: 'standards', label: 'Стандарт / стандарты', hint: 'Стандарт или стандарты, по которым лифт изготовлен и проверяется.' },
+      { k: 'liftType', label: 'Тип лифта', type: 'choice', options: ['Электрический', 'Гидравлический'], hint: 'Выберите тип привода лифта. Повторное нажатие снимает выбор.' },
+      { k: 'serialNumber', label: 'Серийный номер лифта', hint: 'Заводской (серийный) номер лифта с таблички.' },
+      { k: 'capacity', label: 'Номинальная грузоподъёмность (кг)', mode: 'decimal', hint: 'Номинальная грузоподъёмность по табличке, в килограммах.' },
+      { k: 'speed', label: 'Номинальная скорость движения лифта (м/с)', mode: 'decimal', hint: 'Номинальная скорость по табличке, в метрах в секунду.' },
+      { k: 'address', label: 'Адрес объекта', wide: true, hint: 'Адрес здания или сооружения, где установлен лифт.' }
+    ]},
+    { title: 'ИНФОРМАЦИЯ О ВЛАДЕЛЬЦЕ ЗДАНИЯ (СООРУЖЕНИЯ)', fields: [
+      { k: 'ownerAddress', label: 'Адрес', wide: true, hint: 'Адрес владельца здания (сооружения).' },
+      { k: 'ownerPhone', label: 'Номер телефона', type: 'tel', hint: 'Контактный телефон владельца.' }
+    ]},
+    { title: 'ИНФОРМАЦИЯ ОБ ОРГАНИЗАЦИИ, ОСУЩЕСТВЛЯЮЩЕЙ ТЕХНИЧЕСКОЕ ОБСЛУЖИВАНИЕ', fields: [
+      { k: 'orgAddress', label: 'Адрес', wide: true, hint: 'Адрес организации, которая обслуживает лифт.' },
+      { k: 'orgPhone', label: 'Номер телефона', type: 'tel', hint: 'Контактный телефон обслуживающей организации.' },
+      { k: 'orgStaff', label: 'Сотрудники организации', wide: true, hint: 'ФИО и должности сотрудников, которые обслуживают этот лифт.' },
+      { k: 'orgFunction', label: 'Выполняемая функция', wide: true, hint: 'Что именно делает организация: техническое обслуживание, ремонт и т. п.' }
+    ]},
+    { title: 'ДОКУМЕНТЫ, СВЯЗАННЫЕ С ПОСТАВЩИКОМ И ТЕХНИЧЕСКИМ ОБСЛУЖИВАНИЕМ', fields: [
+      { k: 'declaration', label: 'Декларация', hint: 'Номер и дата декларации (о соответствии) на лифт.' },
+      { k: 'contract', label: 'Дата и срок действия договора', hint: 'Когда заключён договор на техническое обслуживание и до какого числа действует.' },
+      { k: 'conformityMarkNo', label: 'Номер знака соответствия', hint: 'Номер знака соответствия из документов.' }
+    ]}
+  ];
+
+  function infoVal(k) { return (state.elevatorInfo && state.elevatorInfo[k]) || ''; }
+
+  function infoFilledCount() {
+    var filled = 0, total = 0;
+    INFO_GROUPS.forEach(function (g) { g.fields.forEach(function (f) { total++; if (String(infoVal(f.k)).trim()) filled++; }); });
+    return filled + '/' + total;
+  }
+
+  function buildInfoField(f, ro) {
+    var v = infoVal(f.k), id = 'info-' + f.k, ctl;
+    if (f.type === 'choice') {
+      ctl = '<div class="seg" role="group">' + f.options.map(function (o) {
+        return '<button type="button" class="seg-btn' + (v === o ? ' on' : '') + '" data-info-choice="' + f.k + '" data-value="' + escapeHtml(o) + '"' + (state.readonlyMode ? ' disabled' : '') + '>' + escapeHtml(o) + '</button>';
+      }).join('') + '</div>';
+    } else {
+      var type = f.type === 'date' ? 'date' : (f.type === 'tel' ? 'tel' : 'text');
+      var mode = f.mode ? ' inputmode="' + f.mode + '"' : '';
+      ctl = '<input type="' + type + '"' + mode + ' id="' + id + '" data-info="' + f.k + '" value="' + escapeHtml(v) + '" autocomplete="off"' + ro + '>';
+    }
+    return '<div class="field-group' + (f.wide ? ' wide' : '') + '">' +
+      '<div class="field-label"><label for="' + id + '">' + f.label + '</label>' +
+      '<button type="button" class="hint-btn" data-info-hint aria-label="Пояснение">?</button></div>' +
+      ctl + '<div class="field-hint">' + f.hint + '</div></div>';
+  }
+
   function buildElevatorInfoHtml() {
     var ro = state.readonlyMode ? ' readonly' : '';
-    return '<div class="elevator-info' + (state.elevatorInfoCollapsed ? ' collapsed' : '') + '" id="elevator-info">' +
+    var groups = INFO_GROUPS.map(function (g) {
+      return '<div class="info-group"><div class="info-group-title">' + g.title + '</div>' +
+        '<div class="info-grid">' + g.fields.map(function (f) { return buildInfoField(f, ro); }).join('') + '</div></div>';
+    }).join('');
+    return '<div class="elevator-info' + (state.elevatorInfoCollapsed ? ' collapsed' : '') + (state.showHints ? ' show-hints' : '') + '" id="elevator-info">' +
       '<div class="elevator-info-header" id="elevator-info-toggle">' +
-        '<h2>' + t('elevatorInfo') + '</h2><span class="elevator-info-toggle">&#9660;</span>' +
+        '<h2>' + t('elevatorInfo') + '</h2><span class="info-count" id="info-count">' + infoFilledCount() + '</span><span class="elevator-info-toggle">&#9660;</span>' +
       '</div>' +
       '<div class="elevator-info-fields">' +
-        '<div class="field-group"><label>' + t('address') + '</label><input type="text" id="info-address" value="' + escapeHtml(state.elevatorInfo.address) + '"' + ro + '></div>' +
-        '<div class="field-group"><label>' + t('serialNumber') + '</label><input type="text" id="info-serial" value="' + escapeHtml(state.elevatorInfo.serialNumber) + '"' + ro + '></div>' +
-        '<div class="field-group"><label>' + t('inspectionDate') + '</label><input type="date" id="info-date" value="' + escapeHtml(state.elevatorInfo.inspectionDate) + '"' + ro + '></div>' +
-        '<div class="field-group"><label>' + t('inspectorName') + '</label><input type="text" id="info-inspector" value="' + escapeHtml(state.elevatorInfo.inspectorName) + '"' + ro + '></div>' +
+        '<div class="info-tools"><button type="button" id="info-hints-toggle" class="info-hints-btn' + (state.showHints ? ' on' : '') + '">? Пояснения к полям</button></div>' +
+        groups +
       '</div></div>';
   }
+
+  function buildPrintFormHtml() {
+    var h = '<table class="print-form">';
+    INFO_GROUPS.forEach(function (g, gi) {
+      if (gi === 0) {
+        h += '<tr class="pf-title"><td colspan="' + g.fields.length + '">' + g.title + '</td></tr><tr class="pf-lab">';
+        g.fields.forEach(function (f) { h += '<td>' + f.label + '</td>'; });
+        h += '</tr><tr class="pf-val">';
+        g.fields.forEach(function (f) { h += '<td>' + (escapeHtml(infoVal(f.k)) || '&nbsp;') + '</td>'; });
+        h += '</tr>';
+      } else {
+        h += '<tr class="pf-title"><td colspan="' + INFO_GROUPS[0].fields.length + '">' + g.title + '</td></tr>';
+        g.fields.forEach(function (f) {
+          h += '<tr><td class="pf-l" colspan="2">' + f.label + '</td><td colspan="' + (INFO_GROUPS[0].fields.length - 2) + '">' + (escapeHtml(infoVal(f.k)) || '&nbsp;') + '</td></tr>';
+        });
+      }
+    });
+    return h + '</table>';
+  }
+
+  function refreshPrintForm() {
+    var pf = document.querySelector('.print-form');
+    if (pf) pf.outerHTML = buildPrintFormHtml();
+  }
+  window.addEventListener('beforeprint', refreshPrintForm);
 
   function buildPrintAndBannerHtml() {
     var activeName = '';
@@ -522,10 +611,7 @@
       '<div class="print-header"><h1>' + t('printTitle') + '</h1>' +
         (activeName ? '<div class="print-checklist-name">' + escapeHtml(activeName) + '</div>' : '') +
         '<div class="print-info">' +
-        '<strong>' + t('address') + ':</strong> ' + escapeHtml(state.elevatorInfo.address || '---') + '<br>' +
-        '<strong>' + t('serialNumber') + ':</strong> ' + escapeHtml(state.elevatorInfo.serialNumber || '---') + '<br>' +
-        '<strong>' + t('inspectionDate') + ':</strong> ' + escapeHtml(state.elevatorInfo.inspectionDate || '---') + '<br>' +
-        '<strong>' + t('inspectorName') + ':</strong> ' + escapeHtml(state.elevatorInfo.inspectorName || '---') +
+        buildPrintFormHtml() +
       '</div></div>' +
       '<div class="print-summary"><h3>' + t('printSummary') + '</h3>' +
         '<p class="print-summary-line">' +
@@ -725,6 +811,28 @@
         return;
       }
 
+      // Report header: field hints, global hints, segmented choice
+      var hintBtn = target.closest('[data-info-hint]');
+      if (hintBtn) { var fg = hintBtn.closest('.field-group'); if (fg) fg.classList.toggle('hint-open'); return; }
+      if (target.closest('#info-hints-toggle')) {
+        state.showHints = !state.showHints;
+        var eix = document.getElementById('elevator-info');
+        if (eix) eix.classList.toggle('show-hints', !!state.showHints);
+        target.closest('#info-hints-toggle').classList.toggle('on', !!state.showHints);
+        scheduleSave();
+        return;
+      }
+      var segBtn = target.closest('[data-info-choice]');
+      if (segBtn) {
+        if (state.readonlyMode) return;
+        var ck = segBtn.getAttribute('data-info-choice'), cv = segBtn.getAttribute('data-value');
+        state.elevatorInfo[ck] = (state.elevatorInfo[ck] === cv) ? '' : cv;
+        [].forEach.call(segBtn.parentNode.querySelectorAll('.seg-btn'), function (b) { b.classList.toggle('on', b.getAttribute('data-value') === state.elevatorInfo[ck]); });
+        var ic2 = document.getElementById('info-count'); if (ic2) ic2.textContent = infoFilledCount();
+        scheduleSave();
+        return;
+      }
+
       // Elevator info toggle
       if (target.closest('#elevator-info-toggle')) {
         state.elevatorInfoCollapsed = !state.elevatorInfoCollapsed;
@@ -736,6 +844,7 @@
 
       // Print
       if (target.closest('#btn-print')) {
+        refreshPrintForm();
         window.print();
         return;
       }
@@ -869,10 +978,11 @@
       }
 
       // Elevator info
-      if (target.id === 'info-address') { state.elevatorInfo.address = target.value; scheduleSave(); }
-      if (target.id === 'info-serial') { state.elevatorInfo.serialNumber = target.value; scheduleSave(); }
-      if (target.id === 'info-date') { state.elevatorInfo.inspectionDate = target.value; scheduleSave(); }
-      if (target.id === 'info-inspector') { state.elevatorInfo.inspectorName = target.value; scheduleSave(); }
+      if (target.dataset && target.dataset.info) {
+        state.elevatorInfo[target.dataset.info] = target.value;
+        var ic = document.getElementById('info-count'); if (ic) ic.textContent = infoFilledCount();
+        scheduleSave();
+      }
     });
 
     // Language change
@@ -954,7 +1064,7 @@
     state.readonlyMode = true;
     state.itemStatuses = entry.itemStatuses || {};
     state.itemComments = entry.itemComments || {};
-    state.elevatorInfo = entry.elevatorInfo || { address: '', serialNumber: '', inspectionDate: '', inspectorName: '' };
+    state.elevatorInfo = entry.elevatorInfo || {};
     state.commentVisible = {};
     state.collapsedSections = {};
     state.collapsedSubsections = {};
@@ -1006,7 +1116,7 @@
     state.itemStatuses = {};
     state.itemComments = {};
     state.commentVisible = {};
-    state.elevatorInfo = { address: '', serialNumber: '', inspectionDate: '', inspectorName: '' };
+    state.elevatorInfo = {};
     state.collapsedSections = {};
     state.collapsedSubsections = {};
     state.filter = 'all';
